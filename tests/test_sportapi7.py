@@ -77,3 +77,91 @@ def test_404_retorna_none():
     responses.get(f"{API}/ping", status=404)
     client = SportAPI7Client()
     assert client._get("/ping") is None
+
+
+def _evento(eid, casa, fora, gc, gf, ts=1763424000):
+    return {
+        "id": eid,
+        "homeTeam": {"name": casa}, "awayTeam": {"name": fora},
+        "homeScore": {"current": gc}, "awayScore": {"current": gf},
+        "startTimestamp": ts, "tournament": {"name": "Amistoso"},
+        "status": {"type": "finished"},
+    }
+
+
+@responses.activate
+def test_search_team_prioriza_selecao_nacional():
+    responses.get(
+        f"{API}/search/all",
+        json={"results": [
+            {"type": "team", "entity": {"id": 1, "name": "Japan FC",
+             "national": False, "sport": {"slug": "football"}}},
+            {"type": "team", "entity": {"id": 4922, "name": "Japan",
+             "national": True, "sport": {"slug": "football"}}},
+        ]},
+    )
+    client = SportAPI7Client()
+    assert client.search_team("Japan", national=True) == (4922, "Japan")
+
+
+@responses.activate
+def test_eventos_historicos_pagina_ate_o_fim():
+    responses.get(
+        f"{API}/team/4705/events/last/0",
+        json={"events": [_evento(10, "Netherlands", "Japan", 2, 1)],
+              "hasNextPage": True},
+    )
+    responses.get(
+        f"{API}/team/4705/events/last/1",
+        json={"events": [_evento(11, "Sweden", "Netherlands", 0, 3)],
+              "hasNextPage": False},
+    )
+    client = SportAPI7Client()
+    eventos = client.eventos_historicos(4705)
+    assert [e["id"] for e in eventos] == [10, 11]
+
+
+@responses.activate
+def test_fetch_event_statistics_com_xg():
+    responses.get(
+        f"{API}/event/10/statistics",
+        json={"statistics": [{"period": "ALL", "groups": [{"statisticsItems": [
+            {"name": "Corner kicks", "home": "7", "away": "2"},
+            {"name": "Expected goals", "home": "2.31", "away": "0.55"},
+        ]}]}]},
+    )
+    client = SportAPI7Client()
+    stats = client.fetch_event_statistics(10)
+    assert stats.escanteios_casa == 7
+    assert stats.xg_fora == 0.55
+
+
+@responses.activate
+def test_fetch_event_lineups():
+    responses.get(
+        f"{API}/event/10/lineups",
+        json={
+            "home": {"players": [{
+                "player": {"id": 70996, "name": "Memphis Depay", "position": "F"},
+                "statistics": {"minutesPlayed": 90, "goals": 2,
+                               "goalAssist": 1, "rating": 8.4,
+                               "onTargetScoringAttempt": 3},
+            }]},
+            "away": {"players": [{
+                "player": {"id": 12345, "name": "Wataru Endo", "position": "M"},
+                "statistics": {"minutesPlayed": 90, "rating": 6.9},
+            }]},
+        },
+    )
+    client = SportAPI7Client()
+    jogadores = client.fetch_event_lineups(10)
+    assert len(jogadores) == 2
+    depay = jogadores[0]
+    assert depay.nome == "Memphis Depay"
+    assert depay.sofascore_id == 70996
+    assert depay.time == "casa"
+    assert depay.gols == 2
+    assert depay.chutes == 3
+    endo = jogadores[1]
+    assert endo.time == "fora"
+    assert endo.gols is None

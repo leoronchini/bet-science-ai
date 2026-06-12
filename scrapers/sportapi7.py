@@ -100,9 +100,107 @@ class SportAPI7Client(BaseScraper):
 
         raise QuotaExceededError("cota SportAPI7 esgotada (HTTP 429 persistente)")
 
-    # implementados na proxima task
+    # ------------------------------------------------------------- endpoints
+
+    def search_team(self, name: str, national: bool = False) -> Optional[tuple[int, str]]:
+        data = self._get(f"/search/all?q={name}")
+        if not data:
+            return None
+        candidatos = []
+        for item in data.get("results", []):
+            entity = item.get("entity", {})
+            if item.get("type") == "team" and entity.get("sport", {}).get("slug") == "football":
+                candidatos.append(entity)
+        if national:
+            nacionais = [e for e in candidatos if e.get("national")]
+            candidatos = nacionais or candidatos
+        if not candidatos:
+            return None
+        escolhido = candidatos[0]
+        return escolhido.get("id"), escolhido.get("name", name)
+
+    def _last_events(self, team_id: int) -> list[dict]:
+        data = self._get(f"/team/{team_id}/events/last/0")
+        return data.get("events", []) if data else []
+
+    def eventos_historicos(self, team_id: int, max_paginas: int = 40) -> list[dict]:
+        """Pagina /events/last/{p} ate esgotar o historico disponivel."""
+        eventos: list[dict] = []
+        for pagina in range(max_paginas):
+            data = self._get(f"/team/{team_id}/events/last/{pagina}")
+            if not data:
+                break
+            eventos.extend(data.get("events", []))
+            if not data.get("hasNextPage"):
+                break
+        return eventos
+
+    def fetch_event_statistics(self, event_id: int) -> Optional[MatchStats]:
+        data = self._get(f"/event/{event_id}/statistics")
+        if not data:
+            return None
+        return parse_statistics_payload(data)
+
+    def fetch_event_lineups(self, event_id: int) -> list[PlayerMatchStats]:
+        data = self._get(f"/event/{event_id}/lineups")
+        if not data:
+            return []
+        jogadores = []
+        for lado, rotulo in (("home", "casa"), ("away", "fora")):
+            for entry in data.get(lado, {}).get("players", []):
+                player = entry.get("player", {})
+                st = entry.get("statistics") or {}
+                jogadores.append(PlayerMatchStats(
+                    nome=player.get("name", "?"),
+                    sofascore_id=player.get("id"),
+                    posicao=player.get("position"),
+                    time=rotulo,
+                    minutos=st.get("minutesPlayed"),
+                    gols=st.get("goals"),
+                    assistencias=st.get("goalAssist"),
+                    chutes=st.get("onTargetScoringAttempt"),
+                    nota=st.get("rating"),
+                ))
+        return jogadores
+
+    def enrich_events_with_stats(self, events: list[dict]) -> None:
+        """Enriquece eventos finalizados com MatchStats in-place (interface sofascore)."""
+        for event in events:
+            if event.get("status", {}).get("type") != "finished":
+                continue
+            event_id = event.get("id")
+            if not event_id:
+                continue
+            stats = self.fetch_event_statistics(event_id)
+            if stats:
+                event["_stats"] = stats
+
+    # ------------------------------------------- interface BaseScraper
+
     def fetch_team_data(self, team_name: str) -> Optional[TeamData]:
-        raise NotImplementedError
+        found = self.search_team(team_name, national=True)
+        if not found:
+            logger.warning("SportAPI7: time %r nao encontrado", team_name)
+            return None
+        team_id, canonical = found
+        events = self._last_events(team_id)
+        finished = [e for e in events if e.get("status", {}).get("type") == "finished"]
+        self.enrich_events_with_stats(finished)
+        finished.reverse()  # API retorna do mais antigo para o mais recente
+        games = [g for g in (_parse_event(e) for e in finished) if g]
+        games = games[: config.RECENT_GAMES_LIMIT]
+
+        team = TeamData(name=canonical, resolved_id=str(team_id), recent_games=games)
+        team.goal_stats = stats_calc.compute_goal_stats(games, canonical)
+        team.home_record = stats_calc.compute_record(games, canonical, home=True)
+        team.away_record = stats_calc.compute_record(games, canonical, home=False)
+        team.current_streak = stats_calc.compute_streak(games, canonical)
+        return team
 
     def fetch_h2h(self, home: TeamData, away: TeamData) -> list[GameResult]:
-        raise NotImplementedError
+        away_lower = away.name.lower()
+        mutual = [
+            g for g in home.recent_games
+            if away_lower in (g.home_team.lower(), g.away_team.lower())
+        ]
+        return mutual[: config.H2H_LIMIT]
