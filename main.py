@@ -5,6 +5,7 @@ import sys
 
 import config
 from agent import formatter, predictor
+from agent.errors import AIUnavailableError
 from agent.parser import ParseError, parse_match_input
 from scrapers import orchestrator
 
@@ -37,6 +38,8 @@ def run_query(raw: str) -> None:
     print(f"Buscando dados de {parsed.home_team} e {parsed.away_team}...")
     try:
         match_data = orchestrator.collect(parsed)
+    except AIUnavailableError:
+        raise  # fatal: tratado no main()
     except TimeoutError:
         logger.warning("Timeout global de coleta atingido")
         print("[Aviso] Coleta parcial por timeout")
@@ -78,7 +81,12 @@ def main() -> None:
             break
         if not raw:
             continue
-        run_query(raw)
+        try:
+            run_query(raw)
+        except AIUnavailableError as exc:
+            print(f"[Erro] IA indisponivel — {exc}", file=sys.stderr)
+            print("Encerrando: a aplicacao requer o modelo de IA para funcionar.", file=sys.stderr)
+            sys.exit(1)
 
 
 if __name__ == "__main__":

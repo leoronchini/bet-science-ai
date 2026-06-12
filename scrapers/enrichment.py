@@ -11,6 +11,7 @@ import re
 from typing import Optional
 
 import config
+from agent.errors import AIUnavailableError, is_fatal_ai_error
 from models.match_data import MarketOdds, MatchData, TeamData
 
 logger = logging.getLogger(__name__)
@@ -132,5 +133,7 @@ def enrich(match_data: MatchData) -> MatchData:
         if "gemini_enrichment" not in match_data.sources_used:
             match_data.sources_used.append("gemini_enrichment")
     except Exception as exc:
+        if is_fatal_ai_error(exc):
+            raise AIUnavailableError(f"Gemini indisponivel no enriquecimento: {exc}") from exc
         logger.warning("Enrichment Gemini falhou: %s", exc)
     return match_data

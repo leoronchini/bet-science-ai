@@ -228,8 +228,11 @@ def predict(match_data: MatchData) -> Prediction:
     base = advanced_baseline(match_data)
     try:
         from agent.agent import StatsAgent
+        from agent.errors import AIUnavailableError
 
         return StatsAgent().analyze(match_data, base)
+    except AIUnavailableError:
+        raise  # fatal: propaga ate o main, que encerra a aplicacao
     except Exception as exc:
         logger.warning("Refinamento Gemini indisponivel (%s) — usando modelo estatistico puro", exc)
         return base

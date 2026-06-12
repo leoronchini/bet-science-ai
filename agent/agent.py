@@ -9,6 +9,7 @@ import re
 from typing import Optional
 
 import config
+from agent.errors import AIUnavailableError, is_fatal_ai_error
 from models.match_data import MatchData, Prediction, ScorePrediction
 
 logger = logging.getLogger(__name__)
@@ -245,5 +246,7 @@ class StatsAgent:
                 logger.debug("Gemini reasoning: %s", result.reasoning_summary)
             return result
         except Exception as exc:
+            if is_fatal_ai_error(exc):
+                raise AIUnavailableError(f"Gemini indisponivel na analise: {exc}") from exc
             logger.warning("Gemini analyze falhou (%s) — usando Poisson puro", exc)
             return base_prediction

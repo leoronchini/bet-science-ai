@@ -10,6 +10,7 @@ import re
 from typing import Optional
 
 import config
+from agent.errors import AIUnavailableError, is_fatal_ai_error
 from models.match_data import GameResult, MatchData, Scorer, TeamData
 
 logger = logging.getLogger(__name__)
@@ -112,5 +113,7 @@ def fill_missing(match_data: MatchData, missing_fields: list[str]) -> MatchData:
             _merge_team(match_data.away_team, data["away"])
         match_data.sources_used.append("gemini_search")
     except Exception as exc:
+        if is_fatal_ai_error(exc):
+            raise AIUnavailableError(f"Gemini indisponivel no fallback de coleta: {exc}") from exc
         logger.warning("Fallback Gemini falhou: %s", exc)
     return match_data
