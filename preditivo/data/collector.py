@@ -6,7 +6,9 @@ from preditivo.data.database import (
     buscar_partidas_sem_stats,
     init_db,
     obter_time_por_nome,
+    upsert_jogador,
     upsert_partida,
+    upsert_stats_jogador,
     upsert_time,
 )
 from scrapers.sofascore import SofascoreScraper, _parse_event
@@ -109,6 +111,88 @@ def _upsert_stats_partida(partida_id: int, stats: MatchStats) -> None:
 
     with _conectar() as conn:
         upsert_stats(conn, partida_id, stats)
+
+
+def coletar_selecao(client, nome_selecao: str, com_jogadores: bool = True) -> tuple[int, list[dict]]:
+    """Coleta historico completo de uma selecao via SportAPI7.
+
+    Retorna (n_partidas, eventos_finalizados) — os eventos alimentam a
+    expansao de adversarios no chamador.
+    """
+    found = client.search_team(nome_selecao, national=True)
+    if not found:
+        logger.warning("Selecao nao encontrada: %s", nome_selecao)
+        return 0, []
+    team_id, canonical = found
+    upsert_time(nome_selecao, canonical, team_id)
+
+    eventos = client.eventos_historicos(team_id)
+    finished = [e for e in eventos if e.get("status", {}).get("type") == "finished"]
+
+    contador = 0
+    for event in finished:
+        event_id = event.get("id")
+        stats = client.fetch_event_statistics(event_id) if event_id else None
+        if stats:
+            event["_stats"] = stats
+
+        jogo = _parse_event(event)
+        if not jogo:
+            continue
+        casa_id = _resolver_ou_criar_time(client, jogo.home_team)
+        fora_id = _resolver_ou_criar_time(client, jogo.away_team)
+        partida_id = upsert_partida(
+            time_casa_id=casa_id, time_fora_id=fora_id,
+            data=jogo.date, competicao=jogo.competition,
+            gols_casa=jogo.home_score, gols_fora=jogo.away_score,
+            stats=jogo.stats,
+        )
+        contador += 1
+
+        if com_jogadores and event_id:
+            for p in client.fetch_event_lineups(event_id):
+                lado_id = casa_id if p.time == "casa" else fora_id
+                jogador_id = upsert_jogador(
+                    p.nome, sofascore_id=p.sofascore_id,
+                    time_id=lado_id, posicao=p.posicao,
+                )
+                upsert_stats_jogador(partida_id, jogador_id, p)
+
+    logger.info("Selecao %s: %d partidas coletadas", canonical, contador)
+    return contador, finished
+
+
+def coletar_adversario(client, nome: str, limite_jogos: int) -> int:
+    """Ultimos N jogos de um adversario (sem lineups — economiza cota)."""
+    found = client.search_team(nome, national=True)
+    if not found:
+        return 0
+    team_id, canonical = found
+    upsert_time(nome, canonical, team_id)
+
+    eventos = client._last_events(team_id)
+    finished = [e for e in eventos if e.get("status", {}).get("type") == "finished"]
+    finished = finished[-limite_jogos:]
+
+    contador = 0
+    for event in finished:
+        event_id = event.get("id")
+        stats = client.fetch_event_statistics(event_id) if event_id else None
+        if stats:
+            event["_stats"] = stats
+        jogo = _parse_event(event)
+        if not jogo:
+            continue
+        casa_id = _resolver_ou_criar_time(client, jogo.home_team)
+        fora_id = _resolver_ou_criar_time(client, jogo.away_team)
+        upsert_partida(
+            time_casa_id=casa_id, time_fora_id=fora_id,
+            data=jogo.date, competicao=jogo.competition,
+            gols_casa=jogo.home_score, gols_fora=jogo.away_score,
+            stats=jogo.stats,
+        )
+        contador += 1
+    return contador
 
 
 def coletar_varios_times(nomes: list[str], max_workers: int = 3) -> dict[str, int]:
