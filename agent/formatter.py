@@ -105,6 +105,11 @@ def render(match_data: MatchData, prediction: Prediction) -> str:
     )
     likely = " | ".join(prediction.likely_scorers) if prediction.likely_scorers else "N/A"
     lines.append(f"  Artilheiro       : {likely}")
+
+    if any(x is not None for x in [prediction.cards_total, prediction.corners_total]):
+        lines.append(f"  Cartoes          : Total {fmt(prediction.cards_total)} | {home.name} {fmt(prediction.cards_home)} | {away.name} {fmt(prediction.cards_away)}")
+        lines.append(f"  Escanteios       : Total {fmt(prediction.corners_total)} | {home.name} {fmt(prediction.corners_home)} | {away.name} {fmt(prediction.corners_away)}")
+
     lines.append(SEP)
 
     # Rodape de rastreabilidade (RNF-03)
