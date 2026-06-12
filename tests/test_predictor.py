@@ -46,10 +46,10 @@ def test_top_scores_has_three():
     assert len(p.top_scores) == 3
 
 
-def test_claude_adjustment_clamped():
+def test_gemini_adjustment_clamped():
     match = make_match()
     base = poisson_baseline(match)
-    # Claude tenta um ajuste exagerado (+30 p.p. no mandante)
+    # Gemini tenta um ajuste exagerado (+30 p.p. no mandante)
     data = {
         "win_home_pct": base.win_home_pct + 30,
         "draw_pct": max(base.draw_pct - 15, 0),
@@ -73,7 +73,7 @@ def test_unknown_scorer_filtered():
     assert result.likely_scorers == ["Pedro (TA)"]
 
 
-def test_invalid_claude_response_returns_base():
+def test_invalid_gemini_response_returns_base():
     match = make_match()
     base = poisson_baseline(match)
     assert _validate({}, base, match) is base

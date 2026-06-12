@@ -55,13 +55,19 @@ def run_query(raw: str) -> None:
 def main() -> None:
     setup_console()
     setup_logging()
-    if not config.GOOGLE_API_KEY:
-        print(
-            "[Aviso] GOOGLE_API_KEY nao configurada (.env). "
-            "O agente funcionara apenas com a predicao estatistica local.",
-            file=sys.stderr,
-        )
-    print("Football Stats Agent — digite a partida (ex: Flamengo vs Palmeiras)")
+
+    # health check obrigatorio: sem IA disponivel a aplicacao nao inicia
+    from agent.agent import health_check
+
+    print("Verificando disponibilidade do modelo de IA...", file=sys.stderr)
+    ok, message = health_check()
+    if not ok:
+        print(f"[Erro] IA indisponivel — {message}", file=sys.stderr)
+        print("Encerrando: a aplicacao requer o modelo de IA para funcionar.", file=sys.stderr)
+        sys.exit(1)
+    print(f"[OK] {message}", file=sys.stderr)
+
+    print("Football Stats Agent — digite a partida (ex: Brasil vs Argentina)")
     while True:
         try:
             raw = input('Partida (ou "sair"): ').strip()

@@ -37,6 +37,7 @@ def run_collect(scrapers):
          patch.object(orchestrator, "SoccerwayScraper", return_value=scrapers[1]), \
          patch.object(orchestrator.config, "ENABLE_365SCORES", False), \
          patch.object(orchestrator.understat, "fetch_xg", return_value=None), \
+         patch.object(orchestrator.enrichment, "enrich", side_effect=lambda m: m), \
          patch.object(orchestrator.fallback, "fill_missing", side_effect=lambda m, _: m) as fb:
         result = orchestrator.collect(parsed)
     return result, fb

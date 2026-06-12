@@ -13,12 +13,20 @@ from models.match_data import MatchData, Prediction, ScorePrediction
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """Voce e um analista estatistico de futebol. Voce recebe:
-1. Dados reais coletados (JSON) — forma, gols, H2H, artilheiros, xG quando disponivel.
-2. Uma predicao-base calculada por modelo de Poisson.
+SYSTEM_PROMPT = """Voce e um analista estatistico especializado na Copa do Mundo FIFA 2026.
+Voce recebe:
+1. Dados reais coletados (JSON) — forma, gols, H2H, artilheiros, xG, escalacao
+   provavel, lesoes, suspensoes, descanso/calendario, fase na Copa e odds de
+   mercado, quando disponiveis.
+2. Uma predicao-base calculada por modelo Dixon-Coles (Poisson corrigido) ja
+   ajustada por contexto (fadiga, mata-mata, desfalques) e odds de mercado.
 
-Sua tarefa: refinar a predicao-base considerando fatores que o Poisson ignora
-(momento/streak, H2H, mando de campo, artilheiros disponiveis).
+Sua tarefa:
+A) Refinar a predicao-base considerando fatores qualitativos que o modelo
+   nao captura (momento/streak, H2H, peso da camisa em Copas, desfalques
+   especificos, estilo de jogo das selecoes).
+B) Escrever uma analise narrativa em portugues sobre a partida (campo "narrative").
+C) Avaliar sua propria confianca nos dados recebidos (campo "ai_confidence").
 
 REGRAS INVIOLAVEIS:
 - Use APENAS os dados fornecidos. Nao busque nem presuma dados externos.
@@ -27,12 +35,30 @@ REGRAS INVIOLAVEIS:
 - win_home_pct + draw_pct + win_away_pct = 100 exatamente.
 - Responda APENAS com o JSON no schema fornecido, sem texto adicional.
 
+INSTRUCOES PARA "narrative":
+- 1 paragrafo unico e conciso, de 4 a 6 frases, em portugues corrido
+  (sem markdown, sem bullets). Maximo ~120 palavras.
+- Va direto ao ponto: o essencial da forma recente, o desfalque ou fator de
+  contexto mais relevante, 1-2 jogadores de destaque pelo nome, e a
+  perspectiva para o jogo. Se houver odds, uma frase sobre o que o mercado espera.
+- Nao repita numeros que ja estao na predicao (percentuais, placares).
+- Mencione apenas dados presentes no JSON fornecido.
+
+INSTRUCOES PARA "ai_confidence":
+- Inteiro de 0 a 100 refletindo a qualidade/completude dos dados recebidos.
+- 80-100: dados ricos (forma, xG, H2H, artilheiros, casa/fora todos presentes).
+- 50-79: dados parciais (alguns campos ausentes).
+- 0-49: dados escassos (forma ou medias de gols ausentes).
+
 Schema da resposta:
 {"win_home_pct": float, "draw_pct": float, "win_away_pct": float,
  "xg_home": float|null, "xg_away": float|null,
  "top_scores": [{"score": "2-1", "probability": float}, ...3 itens],
  "over_25_pct": float|null, "btts_pct": float|null,
- "likely_scorers": ["Nome (ABREV)"], "reasoning_summary": "max 2 frases"}"""
+ "likely_scorers": ["Nome (ABREV)"],
+ "reasoning_summary": "max 2 frases",
+ "narrative": "texto corrido em portugues",
+ "ai_confidence": int}"""
 
 
 def _extract_json(text: str) -> Optional[dict]:
@@ -120,6 +146,12 @@ def _validate(data: dict, base: Prediction, match_data: MatchData) -> Prediction
         v = data.get(key)
         return round(float(v), 1) if isinstance(v, (int, float)) else fallback
 
+    narrative = data.get("narrative")
+    narrative = narrative.strip() if isinstance(narrative, str) and narrative.strip() else None
+
+    raw_conf = data.get("ai_confidence")
+    ai_confidence = int(raw_conf) if isinstance(raw_conf, (int, float)) and 0 <= raw_conf <= 100 else None
+
     return Prediction(
         xg_home=opt_float("xg_home", base.xg_home),
         xg_away=opt_float("xg_away", base.xg_away),
@@ -132,7 +164,32 @@ def _validate(data: dict, base: Prediction, match_data: MatchData) -> Prediction
         likely_scorers=likely,
         reasoning_summary=data.get("reasoning_summary")
         if isinstance(data.get("reasoning_summary"), str) else None,
+        narrative=narrative,
+        ai_confidence=ai_confidence,
     )
+
+
+def health_check() -> tuple[bool, str]:
+    """Verifica se o modelo Gemini esta acessivel e respondendo.
+
+    Retorna (ok, mensagem). Chamada minima (poucos tokens) na inicializacao.
+    """
+    if not config.GOOGLE_API_KEY:
+        return False, "GOOGLE_API_KEY nao configurada (.env)"
+    try:
+        import google.generativeai as genai
+
+        genai.configure(api_key=config.GOOGLE_API_KEY)
+        model = genai.GenerativeModel(model_name=config.GEMINI_MODEL)
+        response = model.generate_content(
+            "ping",
+            generation_config={"max_output_tokens": 5},
+        )
+        if not getattr(response, "text", None):
+            return False, f"modelo {config.GEMINI_MODEL} respondeu vazio"
+        return True, f"modelo {config.GEMINI_MODEL} disponivel"
+    except Exception as exc:
+        return False, f"falha ao acessar o modelo {config.GEMINI_MODEL}: {exc}"
 
 
 class StatsAgent:

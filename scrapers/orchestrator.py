@@ -1,16 +1,17 @@
 """Orquestra a cadeia de fontes com prioridade (RN-12) e merge sem sobrescrita.
 
 Cadeia: Sofascore -> Soccerway -> 365scores. xG: somente Understat (RN-14).
-Fallback Claude (RN-13): apenas se faltarem campos criticos ao final.
+Fallback Gemini (RN-13): apenas se faltarem campos criticos ao final.
 """
 
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime
 
 import config
 from agent.parser import ParsedMatch
 from models.match_data import MatchData, TeamData
-from scrapers import fallback, understat
+from scrapers import enrichment, fallback, understat
 from scrapers.base import BaseScraper
 from scrapers.scores365 import Scores365Scraper
 from scrapers.soccerway import SoccerwayScraper
@@ -86,6 +87,22 @@ def _fill_xg(team: TeamData, sources_used: list[str]) -> None:
             sources_used.append("understat")
 
 
+def _fill_calendar(team: TeamData, today: date) -> None:
+    """Cansaco/calendario derivado localmente das datas dos jogos coletados."""
+    dates = []
+    for g in team.recent_games:
+        if g.date:
+            try:
+                dates.append(datetime.strptime(g.date, "%Y-%m-%d").date())
+            except ValueError:
+                continue
+    if not dates:
+        return
+    dates.sort(reverse=True)
+    team.days_rest = max(0, (today - dates[0]).days)
+    team.matches_30d = sum(1 for d in dates if (today - d).days <= 30)
+
+
 def _missing_critical(match: MatchData) -> list[str]:
     missing = []
     for label, team in (("home", match.home_team), ("away", match.away_team)):
@@ -124,13 +141,23 @@ def collect(parsed: ParsedMatch) -> MatchData:
             match.h2h = h2h
             break
 
-    competitions = [g.competition for g in home.recent_games if g.competition]
-    if competitions:
-        match.competition = competitions[0]
+    if config.WORLD_CUP_MODE:
+        match.competition = config.WORLD_CUP_NAME
+    else:
+        competitions = [g.competition for g in home.recent_games if g.competition]
+        if competitions:
+            match.competition = competitions[0]
+
+    today = date.today()
+    for team in (home, away):
+        _fill_calendar(team, today)
+
+    # contexto Copa 2026: escalacao, lesoes, suspensoes, fase, odds
+    match = enrichment.enrich(match)
 
     missing = _missing_critical(match)
     if missing:
-        logger.info("Campos criticos faltantes %s — acionando fallback Claude", missing)
+        logger.info("Campos criticos faltantes %s — acionando fallback Gemini", missing)
         match = fallback.fill_missing(match, missing)
 
     return match

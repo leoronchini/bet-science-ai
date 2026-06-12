@@ -62,11 +62,35 @@ class TeamData:
     top_scorers: list[Scorer] = field(default_factory=list)
     xg_for: Optional[float] = None
     xg_against: Optional[float] = None
+    # --- enriquecimento (Copa 2026) ---
+    probable_lineup: list[str] = field(default_factory=list)
+    injuries: list[str] = field(default_factory=list)      # jogadores lesionados
+    suspensions: list[str] = field(default_factory=list)   # jogadores suspensos
+    days_rest: Optional[int] = None       # dias desde o ultimo jogo
+    matches_30d: Optional[int] = None     # jogos nos ultimos 30 dias (congestao)
 
     @property
     def form_string(self) -> str:
         """'VVEDV...' derivado de recent_games (mais recente primeiro)."""
         return "".join(g.outcome_for(self.name) for g in self.recent_games)
+
+
+@dataclass
+class MarketOdds:
+    """Odds decimais 1X2 do mercado."""
+
+    home: float
+    draw: float
+    away: float
+    bookmaker: Optional[str] = None
+
+    def implied_probs(self) -> Optional[tuple[float, float, float]]:
+        """Probabilidades implicitas (0-100) com o vig removido. None se invalidas."""
+        if min(self.home, self.draw, self.away) <= 1.0:
+            return None
+        raw = (1 / self.home, 1 / self.draw, 1 / self.away)
+        overround = sum(raw)
+        return tuple(round(100 * r / overround, 1) for r in raw)
 
 
 @dataclass
@@ -79,9 +103,11 @@ class MatchData:
     competition: Optional[str] = None
     match_date: Optional[str] = None
     sources_used: list[str] = field(default_factory=list)
+    stage: Optional[str] = None           # fase na Copa: "Grupos", "Oitavas"...
+    odds: Optional[MarketOdds] = None     # odds 1X2 do mercado
 
     def to_compact_json(self) -> str:
-        """Serializacao enxuta p/ enviar ao Claude — omite None, limita listas."""
+        """Serializacao enxuta p/ enviar ao Gemini — omite None, limita listas."""
 
         def team_block(t: TeamData) -> dict:
             block = {
@@ -100,6 +126,11 @@ class MatchData:
                 "scorers": [f"{s.name} {s.goals}g" for s in t.top_scorers[: config.TOP_SCORERS_LIMIT]],
                 "xg_for": t.xg_for,
                 "xg_ag": t.xg_against,
+                "lineup": t.probable_lineup[:11],
+                "injuries": t.injuries,
+                "suspensions": t.suspensions,
+                "days_rest": t.days_rest,
+                "matches_30d": t.matches_30d,
             }
             return {k: v for k, v in block.items() if v not in (None, [], "")}
 
@@ -109,6 +140,11 @@ class MatchData:
             "h2h": [g.compact() for g in self.h2h[: config.H2H_LIMIT]],
             "competition": self.competition,
             "date": self.match_date,
+            "stage": self.stage,
+            "market_odds_1x2": (
+                {"home": self.odds.home, "draw": self.odds.draw, "away": self.odds.away}
+                if self.odds else None
+            ),
         }
         payload = {k: v for k, v in payload.items() if v not in (None, [], "")}
         return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -132,3 +168,5 @@ class Prediction:
     btts_pct: Optional[float]
     likely_scorers: list[str]
     reasoning_summary: Optional[str] = None  # interno; NAO vai pro relatorio
+    narrative: Optional[str] = None          # analise narrativa em texto
+    ai_confidence: Optional[int] = None      # 0-100: qualidade dos dados disponíveis
