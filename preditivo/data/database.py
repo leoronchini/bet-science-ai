@@ -67,7 +67,7 @@ def upsert_partida(
     stats: Optional[MatchStats] = None,
 ) -> int:
     with _conectar() as conn:
-        cur = conn.execute(
+        conn.execute(
             """INSERT INTO partidas (time_casa_id, time_fora_id, data, competicao, gols_casa, gols_fora)
                VALUES (?, ?, ?, ?, ?, ?)
                ON CONFLICT(time_casa_id, time_fora_id, data) DO UPDATE SET
@@ -75,7 +75,17 @@ def upsert_partida(
                    competicao=COALESCE(excluded.competicao, partidas.competicao)""",
             (time_casa_id, time_fora_id, data, competicao, gols_casa, gols_fora),
         )
-        partida_id = cur.lastrowid
+        if data is None:
+            row = conn.execute(
+                "SELECT id FROM partidas WHERE time_casa_id=? AND time_fora_id=? AND data IS NULL",
+                (time_casa_id, time_fora_id),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT id FROM partidas WHERE time_casa_id=? AND time_fora_id=? AND data=?",
+                (time_casa_id, time_fora_id, data),
+            ).fetchone()
+        partida_id = row["id"]
 
         if stats:
             upsert_stats(conn, partida_id, stats)
