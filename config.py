@@ -11,6 +11,13 @@ GEMINI_MAX_TOKENS = 2000
 ENABLE_365SCORES = os.getenv("ENABLE_365SCORES", "true").lower() == "true"
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
+# SportAPI7 (RapidAPI) — fonte primaria de coleta historica
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
+SPORTAPI7_HOST = "sportapi7.p.rapidapi.com"
+SPORTAPI7_DELAY = float(os.getenv("SPORTAPI7_DELAY", "0.6"))  # s entre chamadas
+SPORTAPI7_MAX_RETRIES = 3
+OPPONENT_GAMES_LIMIT = 20    # jogos coletados por adversario (profundidade 1)
+
 HTTP_TIMEOUT = 15            # segundos por request
 SCRAPER_TIMEOUT = 90         # timeout global de coleta (RNF-01)
 PLAYWRIGHT_TIMEOUT = 30_000  # ms
