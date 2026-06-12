@@ -8,6 +8,44 @@ import config
 
 
 @dataclass
+class MatchStats:
+    """Estatisticas detalhadas de uma partida (cartoes, escanteios, etc)."""
+
+    escanteios_casa: Optional[int] = None
+    escanteios_fora: Optional[int] = None
+    cartoes_amarelos_casa: Optional[int] = None
+    cartoes_amarelos_fora: Optional[int] = None
+    cartoes_vermelhos_casa: Optional[int] = None
+    cartoes_vermelhos_fora: Optional[int] = None
+    posse_casa: Optional[float] = None
+    posse_fora: Optional[float] = None
+    chutes_gol_casa: Optional[int] = None
+    chutes_gol_fora: Optional[int] = None
+    faltas_casa: Optional[int] = None
+    faltas_fora: Optional[int] = None
+    impedimentos_casa: Optional[int] = None
+    impedimentos_fora: Optional[int] = None
+
+    @property
+    def total_escanteios(self) -> Optional[int]:
+        if self.escanteios_casa is not None and self.escanteios_fora is not None:
+            return self.escanteios_casa + self.escanteios_fora
+        return None
+
+    @property
+    def total_cartoes_amarelos(self) -> Optional[int]:
+        if self.cartoes_amarelos_casa is not None and self.cartoes_amarelos_fora is not None:
+            return self.cartoes_amarelos_casa + self.cartoes_amarelos_fora
+        return None
+
+    @property
+    def total_cartoes_vermelhos(self) -> Optional[int]:
+        if self.cartoes_vermelhos_casa is not None and self.cartoes_vermelhos_fora is not None:
+            return self.cartoes_vermelhos_casa + self.cartoes_vermelhos_fora
+        return None
+
+
+@dataclass
 class GameResult:
     """Um jogo passado de um time."""
 
@@ -17,6 +55,7 @@ class GameResult:
     home_score: int
     away_score: int
     competition: Optional[str] = None
+    stats: Optional[MatchStats] = None
 
     def outcome_for(self, team: str) -> str:
         """Retorna 'V', 'E' ou 'D' do ponto de vista de `team`."""
@@ -132,3 +171,10 @@ class Prediction:
     btts_pct: Optional[float]
     likely_scorers: list[str]
     reasoning_summary: Optional[str] = None  # interno; NAO vai pro relatorio
+    # Campos estendidos para NN (cartoes, escanteios)
+    cards_total: Optional[float] = None
+    cards_home: Optional[float] = None
+    cards_away: Optional[float] = None
+    corners_total: Optional[float] = None
+    corners_home: Optional[float] = None
+    corners_away: Optional[float] = None

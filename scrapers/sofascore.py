@@ -8,7 +8,7 @@ import time
 from typing import Optional
 
 import config
-from models.match_data import GameResult, Scorer, TeamData
+from models.match_data import GameResult, MatchStats, Scorer, TeamData
 from scrapers import stats_calc
 from scrapers.base import BaseScraper, http_get
 
@@ -27,6 +27,7 @@ def _parse_event(event: dict) -> Optional[GameResult]:
     ts = event.get("startTimestamp")
     date = time.strftime("%Y-%m-%d", time.gmtime(ts)) if ts else None
     competition = event.get("tournament", {}).get("name")
+    stats = event.get("_stats") if isinstance(event.get("_stats"), MatchStats) else None
     return GameResult(
         date=date,
         home_team=home,
@@ -34,6 +35,7 @@ def _parse_event(event: dict) -> Optional[GameResult]:
         home_score=home_score,
         away_score=away_score,
         competition=competition,
+        stats=stats,
     )
 
 
@@ -74,6 +76,7 @@ class SofascoreScraper(BaseScraper):
 
         events = self._last_events(team_id)
         finished = [e for e in events if e.get("status", {}).get("type") == "finished"]
+        self.enrich_events_with_stats(finished)
         # API retorna do mais antigo para o mais recente; invertemos
         finished.reverse()
         games = [g for g in (_parse_event(e) for e in finished) if g]
@@ -143,6 +146,78 @@ class SofascoreScraper(BaseScraper):
             if away_lower in (g.home_team.lower(), g.away_team.lower())
         ]
         return mutual[: config.H2H_LIMIT]
+
+    def fetch_event_statistics(self, event_id: int) -> Optional[MatchStats]:
+        """Busca estatisticas detalhadas (escanteios, cartoes, posse, etc)."""
+        time.sleep(0.5)
+        resp = http_get(f"{API}/event/{event_id}/statistics")
+        if resp is None:
+            return None
+        try:
+            data = resp.json()
+        except ValueError:
+            return None
+
+        groups = []
+        for period in data.get("statistics", []):
+            if period.get("period") == "ALL":
+                groups = period.get("groups", [])
+                break
+
+        stats = MatchStats()
+        for group in groups:
+            items = group.get("statisticsItems", [])
+            for item in items:
+                name = item.get("name", "")
+                home_val = item.get("home")
+                away_val = item.get("away")
+                try:
+                    home_int = int(home_val) if home_val is not None else None
+                    away_int = int(away_val) if away_val is not None else None
+                    home_float = float(home_val) if home_val is not None else None
+                    away_float = float(away_val) if away_val is not None else None
+                except (ValueError, TypeError):
+                    continue
+
+                if "Corner kicks" in name:
+                    stats.escanteios_casa = home_int
+                    stats.escanteios_fora = away_int
+                elif "Yellow cards" in name:
+                    stats.cartoes_amarelos_casa = home_int
+                    stats.cartoes_amarelos_fora = away_int
+                elif "Red cards" in name:
+                    stats.cartoes_vermelhos_casa = home_int
+                    stats.cartoes_vermelhos_fora = away_int
+                elif "Ball possession" in name:
+                    stats.posse_casa = home_float
+                    stats.posse_fora = away_float
+                elif "Shots on target" in name:
+                    stats.chutes_gol_casa = home_int
+                    stats.chutes_gol_fora = away_int
+                elif "Fouls" in name:
+                    stats.faltas_casa = home_int
+                    stats.faltas_fora = away_int
+                elif "Offsides" in name:
+                    stats.impedimentos_casa = home_int
+                    stats.impedimentos_fora = away_int
+
+        has_data = any([
+            stats.escanteios_casa, stats.cartoes_amarelos_casa,
+            stats.cartoes_vermelhos_casa, stats.posse_casa,
+        ])
+        return stats if has_data else None
+
+    def enrich_events_with_stats(self, events: list[dict]) -> None:
+        """Enriquece eventos finalizados com MatchStats in-place."""
+        for event in events:
+            if event.get("status", {}).get("type") != "finished":
+                continue
+            event_id = event.get("id")
+            if not event_id:
+                continue
+            stats = self.fetch_event_statistics(event_id)
+            if stats:
+                event["_stats"] = stats
 
     def _h2h_by_event(self, event_id: int) -> list[GameResult]:
         time.sleep(0.5)

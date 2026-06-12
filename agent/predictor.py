@@ -84,10 +84,37 @@ def poisson_baseline(match: MatchData) -> Prediction:
 
 def predict(match_data: MatchData) -> Prediction:
     base = poisson_baseline(match_data)
+
+    # 1. Neural Network ensemble (se modelos treinados disponiveis)
+    try:
+        from preditivo.predict.nn_predictor import PredictorNN
+        from preditivo.predict.ensemble import blend
+
+        nn = PredictorNN()
+        nn.carregar_modelos()
+        if nn.disponivel:
+            nn_pred = nn.predict(match_data)
+            final = blend(base, nn_pred)
+            logger.info("Predicao com ensemble NN + Poisson")
+        else:
+            final = base
+    except Exception as exc:
+        logger.debug("NN predictor indisponivel (%s) — usando Poisson puro", exc)
+        final = base
+
+    # 2. Gemini refinement (opcional, como camada final)
     try:
         from agent.agent import StatsAgent
 
-        return StatsAgent().analyze(match_data, base)
+        gemini_result = StatsAgent().analyze(match_data, final)
+        # Preservar campos estendidos que o Gemini nao conhece
+        gemini_result.cards_total = final.cards_total
+        gemini_result.cards_home = final.cards_home
+        gemini_result.cards_away = final.cards_away
+        gemini_result.corners_total = final.corners_total
+        gemini_result.corners_home = final.corners_home
+        gemini_result.corners_away = final.corners_away
+        return gemini_result
     except Exception as exc:
-        logger.warning("Refinamento Gemini indisponivel (%s) — usando Poisson puro", exc)
-        return base
+        logger.warning("Refinamento Gemini indisponivel (%s) — usando predicao anterior", exc)
+        return final
