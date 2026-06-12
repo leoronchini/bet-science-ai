@@ -11,6 +11,7 @@ import config
 from models.match_data import GameResult, MatchStats, Scorer, TeamData
 from scrapers import stats_calc
 from scrapers.base import BaseScraper, http_get
+from scrapers.stats_parsing import parse_statistics_payload
 
 logger = logging.getLogger(__name__)
 
@@ -157,55 +158,7 @@ class SofascoreScraper(BaseScraper):
             data = resp.json()
         except ValueError:
             return None
-
-        groups = []
-        for period in data.get("statistics", []):
-            if period.get("period") == "ALL":
-                groups = period.get("groups", [])
-                break
-
-        stats = MatchStats()
-        for group in groups:
-            items = group.get("statisticsItems", [])
-            for item in items:
-                name = item.get("name", "")
-                home_val = item.get("home")
-                away_val = item.get("away")
-                try:
-                    home_int = int(home_val) if home_val is not None else None
-                    away_int = int(away_val) if away_val is not None else None
-                    home_float = float(home_val) if home_val is not None else None
-                    away_float = float(away_val) if away_val is not None else None
-                except (ValueError, TypeError):
-                    continue
-
-                if "Corner kicks" in name:
-                    stats.escanteios_casa = home_int
-                    stats.escanteios_fora = away_int
-                elif "Yellow cards" in name:
-                    stats.cartoes_amarelos_casa = home_int
-                    stats.cartoes_amarelos_fora = away_int
-                elif "Red cards" in name:
-                    stats.cartoes_vermelhos_casa = home_int
-                    stats.cartoes_vermelhos_fora = away_int
-                elif "Ball possession" in name:
-                    stats.posse_casa = home_float
-                    stats.posse_fora = away_float
-                elif "Shots on target" in name:
-                    stats.chutes_gol_casa = home_int
-                    stats.chutes_gol_fora = away_int
-                elif "Fouls" in name:
-                    stats.faltas_casa = home_int
-                    stats.faltas_fora = away_int
-                elif "Offsides" in name:
-                    stats.impedimentos_casa = home_int
-                    stats.impedimentos_fora = away_int
-
-        has_data = any([
-            stats.escanteios_casa, stats.cartoes_amarelos_casa,
-            stats.cartoes_vermelhos_casa, stats.posse_casa,
-        ])
-        return stats if has_data else None
+        return parse_statistics_payload(data)
 
     def enrich_events_with_stats(self, events: list[dict]) -> None:
         """Enriquece eventos finalizados com MatchStats in-place."""
