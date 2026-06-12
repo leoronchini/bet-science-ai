@@ -25,6 +25,13 @@ class MatchStats:
     faltas_fora: Optional[int] = None
     impedimentos_casa: Optional[int] = None
     impedimentos_fora: Optional[int] = None
+    # Estatisticas avancadas (SportAPI7) — None quando indisponiveis
+    xg_casa: Optional[float] = None
+    xg_fora: Optional[float] = None
+    big_chances_casa: Optional[int] = None
+    big_chances_fora: Optional[int] = None
+    passes_certos_casa: Optional[int] = None
+    passes_certos_fora: Optional[int] = None
 
     @property
     def total_escanteios(self) -> Optional[int]:
@@ -43,6 +50,23 @@ class MatchStats:
         if self.cartoes_vermelhos_casa is not None and self.cartoes_vermelhos_fora is not None:
             return self.cartoes_vermelhos_casa + self.cartoes_vermelhos_fora
         return None
+
+
+@dataclass
+class PlayerMatchStats:
+    """Estatisticas de um jogador em uma partida (lineups do SportAPI7)."""
+
+    nome: str
+    sofascore_id: Optional[int] = None
+    posicao: Optional[str] = None
+    time: Optional[str] = None  # "casa" ou "fora"
+    minutos: Optional[int] = None
+    gols: Optional[int] = None
+    assistencias: Optional[int] = None
+    cartao_amarelo: Optional[int] = None
+    cartao_vermelho: Optional[int] = None
+    chutes: Optional[int] = None
+    nota: Optional[float] = None
 
 
 @dataclass
