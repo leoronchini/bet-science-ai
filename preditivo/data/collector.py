@@ -105,43 +105,10 @@ def enriquecer_partidas_sem_stats(limite: int = 100) -> int:
 
 def _upsert_stats_partida(partida_id: int, stats: MatchStats) -> None:
     """Insere ou atualiza estatisticas detalhadas de uma partida."""
-    from preditivo.data.database import _conectar
+    from preditivo.data.database import _conectar, upsert_stats
 
     with _conectar() as conn:
-        conn.execute(
-            """INSERT INTO estatisticas_detalhadas
-               (partida_id, escanteios_casa, escanteios_fora,
-                cartoes_amarelos_casa, cartoes_amarelos_fora,
-                cartoes_vermelhos_casa, cartoes_vermelhos_fora,
-                posse_casa, posse_fora,
-                chutes_gol_casa, chutes_gol_fora,
-                faltas_casa, faltas_fora,
-                impedimentos_casa, impedimentos_fora)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(partida_id) DO UPDATE SET
-                   escanteios_casa=excluded.escanteios_casa,
-                   escanteios_fora=excluded.escanteios_fora,
-                   cartoes_amarelos_casa=excluded.cartoes_amarelos_casa,
-                   cartoes_amarelos_fora=excluded.cartoes_amarelos_fora,
-                   cartoes_vermelhos_casa=excluded.cartoes_vermelhos_casa,
-                   cartoes_vermelhos_fora=excluded.cartoes_vermelhos_fora,
-                   posse_casa=excluded.posse_casa, posse_fora=excluded.posse_fora,
-                   chutes_gol_casa=excluded.chutes_gol_casa,
-                   chutes_gol_fora=excluded.chutes_gol_fora,
-                   faltas_casa=excluded.faltas_casa, faltas_fora=excluded.faltas_fora,
-                   impedimentos_casa=excluded.impedimentos_casa,
-                   impedimentos_fora=excluded.impedimentos_fora""",
-            (
-                partida_id,
-                stats.escanteios_casa, stats.escanteios_fora,
-                stats.cartoes_amarelos_casa, stats.cartoes_amarelos_fora,
-                stats.cartoes_vermelhos_casa, stats.cartoes_vermelhos_fora,
-                stats.posse_casa, stats.posse_fora,
-                stats.chutes_gol_casa, stats.chutes_gol_fora,
-                stats.faltas_casa, stats.faltas_fora,
-                stats.impedimentos_casa, stats.impedimentos_fora,
-            ),
-        )
+        upsert_stats(conn, partida_id, stats)
 
 
 def coletar_varios_times(nomes: list[str], max_workers: int = 3) -> dict[str, int]:

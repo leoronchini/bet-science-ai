@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS estatisticas_detalhadas (
     faltas_fora INTEGER,
     impedimentos_casa INTEGER,
     impedimentos_fora INTEGER,
+    xg_casa REAL,
+    xg_fora REAL,
+    big_chances_casa INTEGER,
+    big_chances_fora INTEGER,
+    passes_certos_casa INTEGER,
+    passes_certos_fora INTEGER,
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(partida_id)
 );
@@ -57,5 +63,30 @@ CREATE TABLE IF NOT EXISTS predicoes (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS jogadores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    sofascore_id INTEGER UNIQUE,
+    time_id INTEGER REFERENCES times(id),
+    posicao TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS estatisticas_jogadores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    partida_id INTEGER NOT NULL REFERENCES partidas(id),
+    jogador_id INTEGER NOT NULL REFERENCES jogadores(id),
+    minutos INTEGER,
+    gols INTEGER,
+    assistencias INTEGER,
+    cartao_amarelo INTEGER,
+    cartao_vermelho INTEGER,
+    chutes INTEGER,
+    nota REAL,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(partida_id, jogador_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_partidas_data ON partidas(data);
 CREATE INDEX IF NOT EXISTS idx_partidas_times ON partidas(time_casa_id, time_fora_id);
+CREATE INDEX IF NOT EXISTS idx_stats_jog_partida ON estatisticas_jogadores(partida_id);
