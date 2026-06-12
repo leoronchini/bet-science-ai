@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "sportapi7": {
+      "command": "npx",
+      "args": [
+        "mcp-remote",
+        "https://mcp.rapidapi.com",
+        "--header",
+        "x-api-host: sportapi7.p.rapidapi.com",
+        "--header",
+        "x-api-key: ${RAPIDAPI_KEY}"
+      ]
+    }
+  }
+}

@@ -26,6 +26,31 @@ GOOGLE_API_KEY=AIza...cole_sua_chave_aqui
 
 ---
 
+## Coleta Copa 2026 — Grupo F (SportAPI7)
+
+Os modelos preditivos são treinados com dados históricos coletados via
+SportAPI7 (RapidAPI, dados Sofascore). Configure a chave no `.env`:
+
+```
+RAPIDAPI_KEY=sua_chave_do_rapidapi
+```
+
+E rode a coleta (idempotente — pode rodar várias vezes; o cache em
+`data/cache_api/` evita gastar cota com chamadas repetidas):
+
+```bash
+# plano gratuito (~500 chamadas/mes): rode por ciclos
+python coletar_copa.py --limite-chamadas 450
+
+# plano pago: carga completa
+python coletar_copa.py
+```
+
+Detalhes da estratégia de dados:
+`docs/superpowers/specs/2026-06-12-sportapi7-grupo-f-design.md`.
+
+---
+
 ## 3. Executar
 
 ### Opção A — duplo clique (mais fácil)
